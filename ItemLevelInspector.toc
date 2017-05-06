@@ -1,0 +1,8 @@
+## Interface: 70200
+## Title: ItemLevelInspector
+## Notes: Displays the average item level of a player in their tooltip
+## Author: Mariyan
+
+ItemLevelInspector.lua
+
+# Interface might get outdated
