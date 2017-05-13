@@ -70,3 +70,66 @@ local function ColorDiff(a, b)
 	end
 	return r, g, b
 end
+
+local ItemLevelPattern1 = ITEM_LEVEL:gsub('%%d', '(%%d+)')
+local ItemLevelPattern2 = ITEM_LEVEL_ALT:gsub('([()])', '%%%1'):gsub('%%d', '(%%d+)')
+
+local TwoHanders = {
+	
+	['INVTYPE_RANGED'] = true,
+	['INVTYPE_RANGEDRIGHT'] = true,
+	['INVTYPE_2HWEAPON'] = true,
+}
+
+local InventorySlots = {}
+for i = 1, 17 do
+	if i ~= 4 then 
+		tinsert(InventorySlots, i)
+	end
+end
+
+local function IsArtifact(itemLink)
+	return itemLink:find('|cffe6cc80') 
+
+local function IsCached(itemLink) 
+	local cached = true
+	local _, itemID, _, relic1, relic2, relic3 = strsplit(':', itemLink)
+	if not GetDetailedItemLevelInfo(itemID) then cached = false end
+	if IsArtifact(itemLink) then
+		if relic1 and relic1 ~= '' and not GetDetailedItemLevelInfo(relic1) then cached = false end
+		if relic2 and relic2 ~= '' and not GetDetailedItemLevelInfo(relic2) then cached = false end
+		if relic3 and relic3 ~= '' and not GetDetailedItemLevelInfo(relic3) then cached = false end
+	end
+	return cached
+end
+
+local Sekret = '|Hilvl|h'
+local function AddLine(leftText, rightText, r1, g1, b1, r2, g2, b2, dontShow)
+
+		if not r1 then
+			r1, g1, b1, r2, g2, b2 = 1, 1, 0, 1, 1, 0
+		end
+		leftText = Sekret .. leftText
+		for i = 2, GameTooltip:NumLines() do
+			local leftStr = _G['GameTooltipTextLeft' .. i]
+			local text = leftStr and leftStr:IsShown() and leftStr:GetText()
+			if text and text:find(Sekret) then
+				
+				local rightStr = _G['GameTooltipTextRight' .. i]
+				leftStr:SetText(leftText)
+				rightStr:SetText(rightText)
+				if r1 and g1 and b1 then
+					leftStr:SetTextColor(r1, g1, b1)
+				end
+				if r2 and g2 and b2 then
+					rightStr:SetTextColor(r2, g2, b2)
+				end
+				return
+			end
+		end
+		if not dontShow or GameTooltip:IsShown() then
+			GameTooltip:AddDoubleLine(leftText, rightText, r1, g1, b1, r2, g2, b2)
+			GameTooltip:Show()
+		end
+end
+
