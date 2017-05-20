@@ -133,3 +133,170 @@ local function AddLine(leftText, rightText, r1, g1, b1, r2, g2, b2, dontShow)
 		end
 end
 
+local SlotCache = {}
+local ItemCache = {} 
+local TestTips = {}
+for i, slot in pairs(InventorySlots) do
+	local tip = CreateFrame('GameTooltip', 'AverageItemLevelTooltip' .. slot, nil, 'GameTooltipTemplate')
+	tip:SetOwner(WorldFrame, 'ANCHOR_NONE')
+	TestTips[slot] = tip
+	tip.slot = slot
+	tip:SetScript('OnTooltipSetItem', function(self)
+		local slot = self.slot
+		local _, itemLink = self:GetItem()
+		local tipName = self:GetName()
+		if slot == 16 and (_ == '' or not _) and self.itemLink then 
+			itemLink = self.itemLink
+		end
+				for i = 2, self:NumLines() do
+					local str = _G[tipName .. 'TextLeft' .. i]
+					local text = str and str:GetText()
+					if text then
+						local ilevel = text:match(ItemLevelPattern1)
+						if not ilevel then
+							ilevel = text:match(ItemLevelPattern2)
+						end
+						if ilevel then
+							SlotCache[slot] = ilevel
+							ItemCache[slot] = itemLink
+						end
+					end
+				end
+		
+		local finished = true
+		local totalItemLevel = 0
+		
+		for slot, ilevel in pairs(SlotCache) do
+			if not ilevel then
+				finished = false
+				break
+			else
+				if slot ~= 16 and slot ~= 17 then
+					totalItemLevel = totalItemLevel + ilevel
+				end
+			end
+		end
+		
+		if finished then
+			local weaponLevel = 0
+			if SlotCache[16] and SlotCache[17] then 
+				if IsArtifact(ItemCache[16]) or IsArtifact(ItemCache[17]) then -- 
+					local ilevelMain = SlotCache[16]
+					local ilevelOff = SlotCache[17]
+					if ilevelMain > ilevelOff then
+						totalItemLevel = totalItemLevel + (ilevelMain * 2)
+						weaponLevel = ilevelMain
+					else
+						totalItemLevel = totalItemLevel + (ilevelOff * 2)
+						weaponLevel = ilevelOff
+					end
+				else
+					local ilevelMain = SlotCache[16]
+					local ilevelOff = SlotCache[17]
+					totalItemLevel = totalItemLevel + ilevelMain + ilevelOff
+					if ilevelMain > ilevelOff then
+						weaponLevel = ilevelMain
+					else
+						weaponLevel = ilevelOff
+					end
+				end
+			elseif SlotCache[16] then 
+				local _, _, _, weaponType = GetItemInfoInstant(ItemCache[16])
+				local ilevelMain = SlotCache[16]
+				weaponLevel = ilevelMain
+				if TwoHanders[weaponType] then 
+					totalItemLevel = totalItemLevel + (ilevelMain * 2)
+				else
+					totalItemLevel = totalItemLevel + ilevelMain
+				end
+			elseif SlotCache[17] then 
+				local ilevelOff = SlotCache[17]
+				totalItemLevel = totalItemLevel + ilevelOff
+				weaponLevel = ilevelOff
+			end
+			
+			
+			local averageItemLevel = totalItemLevel / 16
+			
+			local guid = ScannedGUID
+			if not GuidCache[guid] then GuidCache[guid] = {} end
+
+			GuidCache[guid].ilevel = averageItemLevel
+			GuidCache[guid].weaponLevel = weaponLevel
+			GuidCache[guid].timestamp = GetTime()
+			
+			E('ITEM_SCAN_COMPLETE', guid, GuidCache[guid])
+		end
+	end)
+end
+
+local function GetTooltipGUID()
+	
+		local _, unitID = GameTooltip:GetUnit()
+		local guid = unitID and UnitGUID(unitID)
+		if UnitIsPlayer(unitID) and CanInspect(unitID) then
+			return guid
+		end
+	
+end
+
+local f = CreateFrame('frame', nil, GameTooltip)
+local ShouldInspect = false
+local LastInspect = 0
+local FailTimeout = 1
+f:SetScript('OnUpdate', function(self, elapsed)
+	local _, unitID = GameTooltip:GetUnit()
+	local guid = unitID and UnitGUID(unitID)
+	if not guid or (InspectFrame and InspectFrame:IsVisible()) then return end
+	local timeSince = GetTime() - LastInspect
+	if ShouldInspect and (ActiveGUID == guid or (timeSince >= INSPECT_TIMEOUT)) then
+		ShouldInspect = false
+		
+		if ActiveGUID ~= guid then 
+			local cache = GuidCache[guid]
+			if cache and GetTime() - cache.timestamp <= CACHE_TIMEOUT then 
+				print('Still cached')
+			elseif CanInspect(unitID) then
+				NotifyInspect(unitID)
+			end
+		end
+	elseif ShouldInspect and (timeSince < INSPECT_TIMEOUT) then 
+		if unitID and UnitIsPlayer(unitID) and CanInspect(unitID) and not GuidCache[ guid ]then
+			AddLine('Pending', format('%.1fs', INSPECT_TIMEOUT - (GetTime() - LastInspect)), 0.6, 0.6, 0.6, 0.6, 0.6, 0.6)
+		end
+	else
+		if ActiveGUID then
+			if guid == ActiveGUID then
+				if timeSince <= FailTimeout then
+					AddLine('Scanning', format('%d%%', timeSince / FailTimeout * 100), 0.6, 0.6, 0.6, 0.6, 0.6, 0.6)
+				else
+					AddLine('Scanning', 'Failed', 0.6, 0.6, 0.6, 0.6, 0.6, 0.6)
+					ActiveGUID = nil
+				end
+			else
+				ActiveGUID = nil
+				
+				if timeSince > FailTimeout and CanInspect(unitID) then
+					NotifyInspect(unitID) 
+				end
+			end
+		end
+	end
+end)
+
+hooksecurefunc('NotifyInspect', function(unitID)
+	print('NotifyInspect!', unitID, UnitGUID(unitID), (select(6, GetPlayerInfoByGUID(UnitGUID(unitID)))))
+	if not GuidCache[UnitGUID(unitID)] then
+		ActiveGUID = UnitGUID(unitID)
+	end
+	LastInspect = GetTime()
+end)
+
+hooksecurefunc('ClearInspectPlayer', function()
+	ActiveGUID = nil
+end)
+
+local function DoInspect()
+	ShouldInspect = true
+end
+
