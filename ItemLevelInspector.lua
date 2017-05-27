@@ -300,3 +300,117 @@ local function DoInspect()
 	ShouldInspect = true
 end
 
+local function DecorateTooltip(guid)
+	local cache = GuidCache[guid]
+	if not cache then print('no cache?') return end
+	if GetTooltipGUID() == guid then 
+		local ourMaxItemLevel, ourEquippedItemLevel = GetAverageItemLevel()
+		
+		local averageItemLevel = cache.ilevel or 0
+		local weaponLevel = cache.weaponLevel or 0
+		local r1, g1, b1 = ColorDiff(ourEquippedItemLevel, averageItemLevel)
+		local ourWeaponMain = GetInventoryItemLink('player', 16)
+		local ourWeaponOff = GetInventoryItemLink('player', 17)
+		local ourWeaponLevel = 0
+		if ourWeaponOff and ourWeaponMain then 
+			local mainLevel = GetDetailedItemLevelInfo(ourWeaponMain)
+			local offLevel = GetDetailedItemLevelInfo(ourWeaponOff)
+			if mainLevel > offLevel then
+				ourWeaponLevel = mainLevel
+			else
+				ourWeaponLevel = offLevel
+			end
+		elseif ourWeaponMain then
+			ourWeaponLevel = GetDetailedItemLevelInfo(ourWeaponMain)
+		elseif ourWeaponOff then
+			ourWeaponLevel = GetDetailedItemLevelInfo(ourWeaponOff)
+		end
+		local r2, g2, b2 = ColorDiff(ourWeaponLevel, weaponLevel)
+		
+		local levelText = format('|cff%2x%2x%2x%.1f|r |cff%2x%2x%2x(%s)|r', r1 * 255, g1 * 255, b1 * 255, averageItemLevel, r2 * 255, g2 * 255, b2 * 255, weaponLevel)
+		
+		AddLine(cache.specName or STAT_AVERAGE_ITEM_LEVEL, levelText, 1, 1, 0, r1, g1, b1)
+		
+	else
+		print('tooltip GUID does not match expected guid')
+	end
+end
+
+local function ScanUnit(unitID)
+	print('SCANNING UNIT', unitID)
+	ScannedGUID = UnitGUID(unitID)
+	wipe(SlotCache)
+	wipe(ItemCache)
+	local numEquipped = 0
+	for i, slot in pairs(InventorySlots) do
+		if GetInventoryItemTexture(unitID, slot) then 
+			SlotCache[slot] = false
+			print('GetInventoryItemTexture', slot, GetInventoryItemTexture(unitID, slot))
+			numEquipped = numEquipped + 1
+		end
+	end
+	
+	if numEquipped > 0 then
+		for slot in pairs(SlotCache) do
+			TestTips[slot]:SetOwner(WorldFrame, 'ANCHOR_NONE')
+			TestTips[slot]:SetInventoryItem(unitID, slot)
+		end
+	else 
+		local guid = ScannedGUID
+		if not GuidCache[guid] then GuidCache[guid] = {} end
+		GuidCache[guid].ilevel = 0
+		GuidCache[guid].weaponLevel = 0
+		GuidCache[guid].timestamp = GetTime()
+		E('ITEM_SCAN_COMPLETE', guid, GuidCache[guid])
+	end
+end
+
+function E:INSPECT_READY(guid)
+	print("INSPECT_READY")
+	ActiveGUID = nil
+	local unitID, name = GetUnitIDFromGUID(guid)
+	if unitID then
+		print("INSPECT_READY", unitID, name)
+		local classDisplayName, class = UnitClass(unitID)
+		local colors = class and RAID_CLASS_COLORS[class]
+		local specID = GetInspectSpecialization(unitID)
+		local specName 
+		if not specName and specID and specID ~= 0 then
+			specID, specName = GetSpecializationInfoByID(specID, UnitSex(unitID))
+			if colors then
+				specName = '|c' .. colors.colorStr .. specName .. '|r'
+			end
+		end
+		
+		if not GuidCache[ guid ] then
+			GuidCache[ guid ] = { ilevel = 0, weaponLevel = 0, timestamp = 0 }
+		end
+		local cache = GuidCache[ guid ]
+		cache.specID = specID
+		cache.class = class
+		cache.specName = specName
+		
+		ScanUnit(unitID)
+	end
+end
+
+function E:ITEM_SCAN_COMPLETE(guid, cache)
+	print('ITEM_SCAN_COMPLETE', guid, cache)
+	DecorateTooltip(guid)
+end
+
+GameTooltip:HookScript('OnTooltipSetUnit', function(self) 
+	local _, unitID = self:GetUnit()
+	local guid = unitID and UnitGUID(unitID)
+	if guid and UnitIsPlayer(unitID) then
+		print('OnTooltipSetUnit', guid, UnitName(unitID))
+		local cache = GuidCache[guid]
+		if cache then
+			
+			DecorateTooltip(guid)
+		end
+		if CanInspect(unitID) then
+			DoInspect()
+		end
+	end
+end
